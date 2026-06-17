@@ -1,164 +1,103 @@
-# ⭐ StellarPay — White Belt dApp
+# ✦ StellarPay — Stellar Testnet dApp
 
-> **Rise In Stellar Journey to Mastery — Level 1 White Belt Submission**
+> Level 1 White Belt Submission — Rise In Stellar Journey to Mastery
 
-A fully functional Stellar testnet dApp built with Next.js 14, TypeScript, and Tailwind CSS. Connect your Freighter wallet, check your XLM balance, send XLM transactions, and view transaction history — all on Stellar Testnet.
-
----
-
-## 🚀 Live Demo
-
-Deploy to Vercel with one click:
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/gopichandchalla16/stellar-pay-app)
+A clean, professional Stellar dApp built on the Stellar Testnet. Connect your Freighter wallet, check your XLM balance, send XLM transactions, and view your transaction history — all in one interface.
 
 ---
 
-## ✅ White Belt Requirements Checklist
+## 🚀 Live Features
 
-| Requirement | Status |
-|---|---|
-| Freighter wallet setup & testnet | ✅ Done |
-| Wallet connect functionality | ✅ Done |
-| Wallet disconnect functionality | ✅ Done |
-| Fetch XLM balance | ✅ Done |
-| Display balance clearly in UI | ✅ Done |
-| Send XLM transaction on testnet | ✅ Done |
-| Success state with tx hash | ✅ Done |
-| Failure state with error message | ✅ Done |
-| Public GitHub repository | ✅ Done |
-| README with setup + screenshots | ✅ Done |
-
----
-
-## 🛠️ Features
-
-- **Wallet Connection** — Connect & disconnect Freighter wallet with one click
-- **Live Balance** — XLM balance fetched from Stellar Horizon testnet API
-- **Testnet Faucet** — Fund your account instantly via Friendbot (10,000 XLM)
-- **Send XLM** — Full payment flow: build → sign → submit with Freighter signing
-- **Transaction Feedback** — Success card with tx hash + Stellar Expert explorer link; clear error states
-- **Transaction History** — Last 10 transactions with status, hash, and explorer links
-- **Responsive UI** — Works on mobile and desktop
-- **Dark theme** — Stellar-themed dark UI
-
----
-
-## 🏗️ Tech Stack
-
-| Technology | Purpose |
-|---|---|
-| Next.js 14 (App Router) | React framework |
-| TypeScript | Type safety |
-| Tailwind CSS | Styling |
-| @stellar/stellar-sdk | Stellar blockchain interactions |
-| @stellar/freighter-api | Freighter wallet integration |
-| Stellar Horizon Testnet | Blockchain API |
-
----
-
-## 📦 Setup Instructions
-
-### Prerequisites
-
-1. **Node.js** v18+ and npm
-2. **Freighter Wallet** browser extension — [Install from freighter.app](https://freighter.app)
-   - After installing, create a wallet and switch to **Testnet** in settings
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/gopichandchalla16/stellar-pay-app.git
-cd stellar-pay-app
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### Build for Production
-
-```bash
-npm run build
-npm start
-```
-
----
-
-## 🎮 How to Use
-
-1. **Install Freighter** — Add the [Freighter browser extension](https://freighter.app)
-2. **Switch to Testnet** — In Freighter settings → Network → Testnet
-3. **Connect** — Click "Connect Freighter Wallet" on the app
-4. **Fund your wallet** — Click "Fund via Friendbot" to get 10,000 free testnet XLM
-5. **Send XLM** — Enter a destination address and amount, click Send
-6. **Approve in Freighter** — Sign the transaction in the Freighter popup
-7. **View result** — See the success card with your transaction hash
-8. **Transaction History** — Switch to the History tab to see past transactions
+- ✅ **Freighter Wallet Connect / Disconnect** — full integration with Freighter browser extension
+- ✅ **Manual Address Entry** — fallback mode when Freighter isn't installed
+- ✅ **XLM Balance Display** — real-time balance fetch from Horizon testnet API
+- ✅ **Send XLM Transactions** — build, sign, and broadcast transactions on Stellar Testnet
+- ✅ **Transaction Feedback** — success state with tx hash + failure state with error details
+- ✅ **Transaction History** — last 10 transactions with Stellar Expert explorer links
+- ✅ **Friendbot Integration** — fund testnet account with one click
+- ✅ **Error Handling** — graceful handling of all edge cases
 
 ---
 
 ## 📸 Screenshots
 
-### 1. Wallet Connected State
-![Wallet Connected](https://raw.githubusercontent.com/gopichandchalla16/stellar-pay-app/main/public/screenshot-wallet-connected.png)
+| Wallet Connected | Balance Display |
+|---|---|
+| ![Wallet](public/screenshot-1-wallet.png) | ![Balance](public/screenshot-2-balance.png) |
 
-### 2. XLM Balance Displayed
-![Balance Display](https://raw.githubusercontent.com/gopichandchalla16/stellar-pay-app/main/public/screenshot-balance.png)
-
-### 3. Successful Testnet Transaction
-![Transaction Success](https://raw.githubusercontent.com/gopichandchalla16/stellar-pay-app/main/public/screenshot-tx-success.png)
-
-### 4. Transaction Result Shown to User
-![Transaction Result](https://raw.githubusercontent.com/gopichandchalla16/stellar-pay-app/main/public/screenshot-tx-result.png)
+| Transaction Success | Transaction Result |
+|---|---|
+| ![TX](public/screenshot-3-tx-success.png) | ![Result](public/screenshot-4-tx-result.png) |
 
 ---
 
-## 🔗 Stellar Network Info
+## 🛠️ Tech Stack
 
-- **Network**: Testnet
-- **Horizon API**: https://horizon-testnet.stellar.org
-- **Explorer**: https://stellar.expert/explorer/testnet
-- **Friendbot**: https://friendbot.stellar.org
+- **Next.js 14** (App Router)
+- **TypeScript**
+- **Tailwind CSS**
+- **@stellar/stellar-sdk** — transaction building
+- **@stellar/freighter-api** — wallet signing
+- **Stellar Horizon Testnet API**
+
+---
+
+## ⚙️ Setup & Run Locally
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/gopichandchalla16/stellar-pay-app.git
+cd stellar-pay-app
+
+# 2. Install dependencies
+npm install
+
+# 3. Start development server
+npm run dev
+
+# 4. Open in browser
+# http://localhost:3000
+```
+
+### Prerequisites
+- Node.js 18+
+- [Freighter Wallet](https://freighter.app) Chrome extension (optional — manual mode available)
+- Switch Freighter to **Testnet** network
+
+---
+
+## 🔑 How to Test
+
+1. Install [Freighter](https://freighter.app) → set network to **Testnet**
+2. Open `http://localhost:3000`
+3. Click **Connect Freighter Wallet**
+4. Click **🪙 Fund via Friendbot** to get 10,000 testnet XLM
+5. Go to **Send XLM** tab
+6. Enter destination: `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5`
+7. Enter amount: `1`
+8. Click **🚀 Send XLM** → approve in Freighter → see success screen
 
 ---
 
 ## 📁 Project Structure
 
 ```
-stellar-pay-app/
-├── src/
-│   ├── app/
-│   │   ├── layout.tsx       # Root layout with metadata
-│   │   ├── page.tsx         # Main app page
-│   │   └── globals.css      # Global styles
-│   ├── components/
-│   │   ├── WalletCard.tsx   # Wallet connect/disconnect/balance
-│   │   ├── SendPayment.tsx  # XLM send flow with signing
-│   │   ├── TransactionHistory.tsx  # Tx history viewer
-│   │   └── StellarIcon.tsx  # SVG logo
-│   └── lib/
-│       └── stellar.ts       # Stellar SDK helpers
-├── public/                  # Screenshots
-├── package.json
-├── tailwind.config.js
-├── tsconfig.json
-└── README.md
+src/
+├── app/
+│   ├── page.tsx          # Main app page
+│   ├── layout.tsx        # Root layout
+│   └── globals.css       # Design system & styles
+└── components/
+    ├── SendPayment.tsx   # XLM transfer component
+    └── TransactionHistory.tsx # TX history viewer
 ```
 
 ---
 
-## 👤 Author
+## 🌐 Deployed App
 
-**Gopichand Challa**  
-GitHub: [@gopichandchalla16](https://github.com/gopichandchalla16)  
-Project: [stellar-pay-app](https://github.com/gopichandchalla16/stellar-pay-app)  
+> Deploy via Vercel: `npx vercel --prod`
 
 ---
 
-*Built for the Rise In Stellar Journey to Mastery — Level 1 White Belt Challenge*
+Built with ❤️ for the **Rise In Stellar Journey to Mastery** program.
