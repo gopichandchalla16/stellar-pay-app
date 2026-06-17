@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --stellar-gradient: linear-gradient(135deg, #0e9e6a 0%, #14b87e 50%, #2ec98a 100%);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #080d0a;
+  color: #e8f5ee;
+  font-family: 'Inter', sans-serif;
+  min-height: 100dvh;
+}
+
+::selection { background: rgba(20, 184, 126, 0.3); color: #e8f5ee; }
+
+:focus-visible {
+  outline: 2px solid #14b87e;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0d1610; }
+::-webkit-scrollbar-thumb { background: #1a3528; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #14b87e; }
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-in { animation: slide-in 0.35s ease forwards; }
+.animate-fade-in { animation: fade-in 0.3s ease forwards; }
+.animate-count-up { animation: count-up 0.4s ease forwards; }
+.animate-shimmer {
+  background: linear-gradient(90deg, #0d1a13 25%, #152e20 50%, #0d1a13 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.animate-spin-slow { animation: spin-slow 2s linear infinite; }
+.animate-pulse-slow { animation: pulse-slow 2s ease-in-out infinite; }
+
+.card-glow {
+  box-shadow: 0 0 0 1px rgba(20, 184, 126, 0.12),
+              0 4px 24px rgba(0, 0, 0, 0.4),
+              0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.card-glow-active {
+  box-shadow: 0 0 0 1px rgba(20, 184, 126, 0.3),
+              0 8px 32px rgba(20, 184, 126, 0.08),
+              0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.gradient-text {
+  background: var(--stellar-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.mesh-bg {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 10%, rgba(14, 158, 106, 0.07) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 90%, rgba(20, 184, 126, 0.05) 0%, transparent 60%),
+    #080d0a;
+}
