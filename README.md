@@ -9,7 +9,6 @@ A clean, professional Stellar dApp built on the Stellar Testnet. Connect your Fr
 ## 🚀 Live Features
 
 - ✅ **Freighter Wallet Connect / Disconnect** — full integration with Freighter browser extension
-- ✅ **Manual Address Entry** — fallback mode when Freighter isn't installed
 - ✅ **XLM Balance Display** — real-time balance fetch from Horizon testnet API
 - ✅ **Send XLM Transactions** — build, sign, and broadcast transactions on Stellar Testnet
 - ✅ **Transaction Feedback** — success state with tx hash + failure state with error details
@@ -22,16 +21,16 @@ A clean, professional Stellar dApp built on the Stellar Testnet. Connect your Fr
 ## 📸 Screenshots
 
 ### 1. Wallet Connected
-![Wallet Connected](public/screenshot-1-wallet.jpg)
+![Wallet Connected](https://raw.githubusercontent.com/gopichandchalla16/stellar-pay-app/main/public/screenshot-1-wallet.jpeg)
 
 ### 2. XLM Balance Displayed
-![XLM Balance](public/screenshot-2-balance.jpg)
+![XLM Balance](https://raw.githubusercontent.com/gopichandchalla16/stellar-pay-app/main/public/screenshot-2-balance.jpeg)
 
 ### 3. Transaction Successful
-![Transaction Success](public/screenshot-3-tx-success.jpg)
+![Transaction Success](https://raw.githubusercontent.com/gopichandchalla16/stellar-pay-app/main/public/screenshot-3-tx-success.jpeg)
 
 ### 4. Transaction Result on Stellar Expert Explorer
-![Transaction Result](public/screenshot-4-tx-result.jpg)
+![Transaction Result](https://raw.githubusercontent.com/gopichandchalla16/stellar-pay-app/main/public/screenshot-4-tx-result.jpeg)
 
 ---
 
@@ -65,7 +64,7 @@ npm run dev
 
 ### Prerequisites
 - Node.js 18+
-- [Freighter Wallet](https://freighter.app) Chrome extension (optional — manual mode available)
+- [Freighter Wallet](https://freighter.app) Chrome extension
 - Switch Freighter to **Testnet** network
 
 ---
@@ -79,7 +78,7 @@ npm run dev
 5. Go to **Send XLM** tab
 6. Enter destination: `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5`
 7. Enter amount: `1`
-8. Click **🚀 Send XLM** → approve in Freighter → see success screen
+8. Click **Send XLM** → approve in Freighter → see success screen with tx hash
 
 ---
 
@@ -92,7 +91,7 @@ src/
 │   ├── layout.tsx        # Root layout
 │   └── globals.css       # Design system & styles
 └── components/
-    ├── SendPayment.tsx   # XLM transfer component
+    ├── SendPayment.tsx        # XLM transfer component
     └── TransactionHistory.tsx # TX history viewer
 ```
 
