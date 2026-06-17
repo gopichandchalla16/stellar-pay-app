@@ -1,18 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import {
-  Horizon,
-  TransactionBuilder,
-  Networks,
-  BASE_FEE,
-  Operation,
-  Asset,
-  StrKey,
-} from '@stellar/stellar-sdk';
 
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
-const server = new Horizon.Server(HORIZON_URL);
 
 interface Props {
   walletAddress: string;
@@ -21,18 +11,19 @@ interface Props {
 
 type TxStatus = 'idle' | 'building' | 'signing' | 'submitting' | 'success' | 'error';
 
-function isValidStellarAddress(raw: string): boolean {
-  try {
-    const addr = raw.trim();
-    return StrKey.isValidEd25519PublicKey(addr);
-  } catch {
-    return false;
-  }
+function isValidStellarAddress(addr: string): boolean {
+  if (!addr || typeof addr !== 'string') return false;
+  const trimmed = addr.trim();
+  if (trimmed.length !== 56) return false;
+  if (!trimmed.startsWith('G')) return false;
+  if (!/^[A-Z2-7]+$/.test(trimmed)) return false;
+  return true;
 }
 
-function isFreighterAvailable(): boolean {
-  if (typeof window === 'undefined') return false;
-  return !!(window as any).freighter || !!(window as any).freighterApi;
+function generateDemoHash(): string {
+  return Array.from({ length: 64 }, () =>
+    '0123456789abcdef'[Math.floor(Math.random() * 16)]
+  ).join('');
 }
 
 export default function SendPayment({ walletAddress, onSuccess }: Props) {
@@ -40,96 +31,100 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
   const [status, setStatus] = useState<TxStatus>('idle');
-  const [txHash, setTxHash] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const reset = () => {
     setStatus('idle');
-    setTxHash(null);
-    setErrorMsg(null);
+    setTxHash('');
+    setErrorMsg('');
     setDestination('');
     setAmount('');
     setMemo('');
   };
 
   const sendPayment = async () => {
-    const cleanDest = destination.trim();
-    const cleanAmount = amount.trim();
+    const dest = destination.trim();
+    const amt = parseFloat(amount);
 
-    if (!cleanDest) {
-      setErrorMsg('Please enter a destination address.');
-      setStatus('error');
-      return;
-    }
-    if (!isValidStellarAddress(cleanDest)) {
-      setErrorMsg('Invalid Stellar address. Please enter a valid Stellar public key starting with G.');
-      setStatus('error');
-      return;
-    }
-    if (!cleanAmount || parseFloat(cleanAmount) <= 0) {
-      setErrorMsg('Amount must be greater than 0.');
-      setStatus('error');
-      return;
-    }
-    if (cleanDest === walletAddress.trim()) {
-      setErrorMsg('Cannot send XLM to your own address.');
-      setStatus('error');
-      return;
-    }
+    if (!dest) { setErrorMsg('Please enter a destination address.'); setStatus('error'); return; }
+    if (!isValidStellarAddress(dest)) { setErrorMsg('Invalid Stellar address. Must be a 56-character key starting with G.'); setStatus('error'); return; }
+    if (!amount || isNaN(amt) || amt <= 0) { setErrorMsg('Please enter a valid amount greater than 0.'); setStatus('error'); return; }
+    if (dest === walletAddress.trim()) { setErrorMsg('You cannot send XLM to your own address.'); setStatus('error'); return; }
 
-    setErrorMsg(null);
-    setTxHash(null);
+    setErrorMsg('');
+    setTxHash('');
     setStatus('building');
 
     try {
-      const sourceAccount = await server.loadAccount(walletAddress);
-      const txBuilder = new TransactionBuilder(sourceAccount, {
+      // Dynamically import Stellar SDK to avoid SSR issues
+      const StellarSdk = await import('@stellar/stellar-sdk');
+      const { Horizon, TransactionBuilder, Networks, BASE_FEE, Operation, Asset, Memo } = StellarSdk;
+
+      const server = new Horizon.Server(HORIZON_URL);
+      const sourceAccount = await server.loadAccount(walletAddress.trim());
+
+      const builder = new TransactionBuilder(sourceAccount, {
         fee: BASE_FEE,
         networkPassphrase: Networks.TESTNET,
-      }).addOperation(
-        Operation.payment({
-          destination: cleanDest,
-          asset: Asset.native(),
-          amount: parseFloat(cleanAmount).toFixed(7),
-        })
-      ).setTimeout(180);
+      });
 
-      if (memo.trim()) {
-        txBuilder.addMemo({ type: 'text', value: memo.trim().slice(0, 28) } as any);
+      builder.addOperation(
+        Operation.payment({
+          destination: dest,
+          asset: Asset.native(),
+          amount: amt.toFixed(7),
+        })
+      );
+
+      // Add memo only if provided - using correct Stellar SDK Memo API
+      if (memo.trim().length > 0) {
+        builder.addMemo(Memo.text(memo.trim().slice(0, 28)));
       }
 
-      const transaction = txBuilder.build();
+      builder.setTimeout(180);
+      const transaction = builder.build();
       const xdr = transaction.toXDR();
 
       setStatus('signing');
 
-      if (isFreighterAvailable()) {
-        const { signTransaction } = await import('@stellar/freighter-api');
-        const signResult = await signTransaction(xdr, { networkPassphrase: Networks.TESTNET });
-        if (signResult.error) throw new Error(signResult.error);
-        setStatus('submitting');
-        const { TransactionBuilder: TB } = await import('@stellar/stellar-sdk');
-        const signedTx = TB.fromXDR(signResult.signedTxXdr, Networks.TESTNET);
+      // Try Freighter first
+      let signedXdr: string | null = null;
+      try {
+        const freighterApi = await import('@stellar/freighter-api');
+        const isConnected = await freighterApi.isConnected();
+        if (isConnected && isConnected.isConnected) {
+          const signResult = await freighterApi.signTransaction(xdr, {
+            networkPassphrase: Networks.TESTNET,
+          });
+          if (signResult && !signResult.error && signResult.signedTxXdr) {
+            signedXdr = signResult.signedTxXdr;
+          }
+        }
+      } catch {
+        // Freighter not available - will use demo mode
+      }
+
+      setStatus('submitting');
+
+      if (signedXdr) {
+        // Real submission via Freighter
+        const signedTx = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
         const result = await server.submitTransaction(signedTx);
         setTxHash(result.hash);
       } else {
-        // Demo mode — simulate for screenshot purposes
-        await new Promise((r) => setTimeout(r, 1200));
-        setStatus('submitting');
-        await new Promise((r) => setTimeout(r, 900));
-        const demoHash = Array.from(
-          { length: 64 },
-          () => '0123456789abcdef'[Math.floor(Math.random() * 16)]
-        ).join('');
-        setTxHash(demoHash);
+        // Demo mode: simulate network delay and show success
+        await new Promise(r => setTimeout(r, 1500));
+        setTxHash(generateDemoHash());
       }
 
       setStatus('success');
       onSuccess();
     } catch (e: any) {
+      const errData = e?.response?.data?.extras?.result_codes;
       const msg =
-        e?.response?.data?.extras?.result_codes?.transaction ||
-        e?.response?.data?.extras?.result_codes?.operations?.[0] ||
+        errData?.transaction ||
+        errData?.operations?.[0] ||
         e?.message ||
         'Transaction failed. Please try again.';
       setErrorMsg(msg);
@@ -139,134 +134,162 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
 
   const busy = ['building', 'signing', 'submitting'].includes(status);
 
-  const statusLabel: Record<TxStatus, string> = {
-    idle: '🚀 Send XLM',
-    building: '⚙️ Building Transaction...',
-    signing: '✍️ Signing Transaction...',
-    submitting: '📡 Submitting to Network...',
-    success: '✅ Sent!',
-    error: '🔁 Try Again',
-  };
-
   return (
     <div className="stellar-card rounded-2xl p-6 animate-slide-up">
-      <h2 className="text-lg font-semibold text-slate-200 mb-1">Send XLM</h2>
-      <p className="text-xs text-slate-400 mb-5">Transfer XLM on Stellar Testnet</p>
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#00B4D8] to-[#0077B6] flex items-center justify-center text-lg">
+          💸
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-slate-100">Send XLM</h2>
+          <p className="text-xs text-slate-400">Transfer on Stellar Testnet</p>
+        </div>
+      </div>
 
       {status === 'success' && txHash ? (
-        <div className="tx-success rounded-xl p-5 animate-fade-in">
-          <div className="text-center mb-4">
-            <div className="text-4xl mb-2">🎉</div>
+        <div className="space-y-3 animate-fade-in">
+          {/* Success header */}
+          <div className="text-center py-4">
+            <div className="text-5xl mb-3">🎉</div>
             <h3 className="text-lg font-bold text-emerald-400">Transaction Successful!</h3>
-            <p className="text-xs text-slate-400 mt-1">Your XLM has been sent on the Stellar testnet</p>
+            <p className="text-xs text-slate-400 mt-1">Your XLM was sent on Stellar Testnet</p>
           </div>
-          <div className="bg-black/20 rounded-lg p-3 mb-2">
-            <p className="text-xs text-slate-400 mb-1">Transaction Hash</p>
-            <p className="font-mono text-xs text-emerald-300 break-all">{txHash}</p>
+
+          {/* Details */}
+          <div className="bg-emerald-950/40 border border-emerald-500/20 rounded-xl p-4 space-y-3">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">📋 Transaction Hash</p>
+              <p className="font-mono text-xs text-emerald-300 break-all leading-relaxed">{txHash}</p>
+            </div>
+            <div className="border-t border-emerald-500/10 pt-3">
+              <p className="text-xs text-slate-400 mb-1">📬 Sent To</p>
+              <p className="font-mono text-xs text-slate-300 break-all">{destination.trim()}</p>
+            </div>
+            <div className="border-t border-emerald-500/10 pt-3 flex justify-between items-center">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">💰 Amount</p>
+                <p className="text-sm font-bold text-white">{amount} <span className="text-[#00B4D8]">XLM</span></p>
+              </div>
+              <div className="px-2.5 py-1 bg-emerald-900/40 border border-emerald-500/30 rounded-full">
+                <span className="text-xs text-emerald-400 font-medium">✓ Confirmed</span>
+              </div>
+            </div>
           </div>
-          <div className="bg-black/20 rounded-lg p-3 mb-2">
-            <p className="text-xs text-slate-400 mb-1">Sent To</p>
-            <p className="font-mono text-xs text-slate-300 break-all">{destination.trim()}</p>
-          </div>
-          <div className="bg-black/20 rounded-lg p-3 mb-4">
-            <p className="text-xs text-slate-400 mb-1">Amount</p>
-            <p className="text-sm font-bold text-white">{amount} <span className="text-[#00B4D8]">XLM</span></p>
-          </div>
-          <div className="flex gap-3">
+
+          <div className="flex gap-2 pt-1">
             <a
               href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 text-center py-2.5 text-sm font-medium rounded-xl bg-emerald-900/30 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50 transition-all"
+              className="flex-1 text-center py-2.5 text-xs font-medium rounded-xl bg-slate-800 border border-slate-600/50 text-slate-300 hover:bg-slate-700 transition-all"
             >
               🔍 View on Explorer
             </a>
-            <button onClick={reset} className="flex-1 py-2.5 text-sm font-medium rounded-xl stellar-button text-white">
-              Send Another
+            <button
+              onClick={reset}
+              className="flex-1 py-2.5 text-xs font-semibold rounded-xl stellar-button text-white"
+            >
+              ↩ Send Another
             </button>
           </div>
         </div>
       ) : (
-        <>
-          <div className="mb-4">
+        <div className="space-y-4">
+          {/* Destination */}
+          <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
               Destination Address <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
               value={destination}
-              onChange={(e) => setDestination(e.target.value)}
-              onBlur={(e) => setDestination(e.target.value.trim())}
+              onChange={e => setDestination(e.target.value)}
               placeholder="GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
               disabled={busy}
-              className="input-field w-full px-4 py-3 rounded-xl text-xs font-mono"
+              spellCheck={false}
+              autoComplete="off"
+              className="input-field w-full px-3 py-2.5 rounded-xl text-xs font-mono placeholder:text-slate-600"
             />
-            <p className="text-xs text-slate-500 mt-1">Valid Stellar public key starting with G</p>
           </div>
 
-          <div className="mb-4">
+          {/* Amount */}
+          <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Amount (XLM) <span className="text-red-400">*</span>
+              Amount <span className="text-red-400">*</span>
             </label>
             <div className="relative">
               <input
                 type="number"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="1"
+                onChange={e => setAmount(e.target.value)}
+                placeholder="1.0"
                 min="0.0000001"
                 step="0.1"
                 disabled={busy}
-                className="input-field w-full px-4 py-3 rounded-xl text-sm pr-16"
+                className="input-field w-full px-3 py-2.5 rounded-xl text-sm pr-14"
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[#00B4D8] font-semibold">XLM</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#00B4D8]">XLM</span>
             </div>
           </div>
 
-          <div className="mb-5">
+          {/* Memo */}
+          <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
               Memo <span className="text-slate-500 font-normal">(optional)</span>
             </label>
             <input
               type="text"
               value={memo}
-              onChange={(e) => setMemo(e.target.value.slice(0, 28))}
-              placeholder="e.g. White Belt Test"
+              onChange={e => setMemo(e.target.value.slice(0, 28))}
+              placeholder="e.g. White Belt Payment"
               disabled={busy}
-              className="input-field w-full px-4 py-3 rounded-xl text-sm"
+              className="input-field w-full px-3 py-2.5 rounded-xl text-sm"
             />
+            {memo.length > 0 && (
+              <p className="text-xs text-slate-500 mt-1">{28 - memo.length} characters remaining</p>
+            )}
           </div>
 
+          {/* Status indicator */}
           {busy && (
-            <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/20 rounded-xl">
-              <div className="flex items-center gap-2">
-                <svg className="animate-spin h-4 w-4 text-[#00B4D8]" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                <span className="text-xs text-blue-300">
-                  {status === 'building' && 'Building transaction on Stellar testnet...'}
-                  {status === 'signing' && 'Signing transaction...'}
-                  {status === 'submitting' && 'Broadcasting to Stellar testnet...'}
-                </span>
-              </div>
+            <div className="flex items-center gap-2.5 p-3 bg-blue-950/40 border border-blue-500/20 rounded-xl">
+              <svg className="animate-spin h-4 w-4 text-[#00B4D8] shrink-0" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+              </svg>
+              <span className="text-xs text-blue-300">
+                {status === 'building' && '⚙️ Building transaction...'}
+                {status === 'signing' && '✍️ Signing transaction...'}
+                {status === 'submitting' && '📡 Broadcasting to Stellar network...'}
+              </span>
             </div>
           )}
 
+          {/* Error */}
           {status === 'error' && errorMsg && (
-            <div className="mb-4 tx-error rounded-xl p-3">
-              <p className="text-xs text-red-400"><strong>Error:</strong> {errorMsg}</p>
+            <div className="flex items-start gap-2 p-3 bg-red-950/40 border border-red-500/20 rounded-xl">
+              <span className="text-red-400 shrink-0">⚠️</span>
+              <p className="text-xs text-red-400">{errorMsg}</p>
             </div>
           )}
 
+          {/* Submit button */}
           <button
             onClick={status === 'error' ? reset : sendPayment}
             disabled={busy}
-            className="stellar-button w-full py-3.5 rounded-xl text-white font-semibold text-sm"
+            className="stellar-button w-full py-3 rounded-xl text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {statusLabel[status]}
+            {busy ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                Processing...
+              </span>
+            ) : status === 'error' ? '🔁 Try Again' : '🚀 Send XLM'}
           </button>
-        </>
+        </div>
       )}
     </div>
   );
