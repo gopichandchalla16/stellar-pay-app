@@ -1,6 +1,6 @@
 # ✦ StellarPay — Stellar Testnet dApp
 
-> Level 1 White Belt Submission — Rise In Stellar Journey to Mastery
+> ⚪️ Level 1 White Belt Submission — Rise In Stellar Journey to Mastery
 
 A clean, professional Stellar dApp built on the Stellar Testnet. Connect your Freighter wallet, check your XLM balance, send XLM transactions, and view your transaction history — all in one interface.
 
@@ -21,13 +21,17 @@ A clean, professional Stellar dApp built on the Stellar Testnet. Connect your Fr
 
 ## 📸 Screenshots
 
-| Wallet Connected | Balance Display |
-|---|---|
-| ![Wallet](public/screenshot-1-wallet.png) | ![Balance](public/screenshot-2-balance.png) |
+### 1. Wallet Connected
+![Wallet Connected](public/screenshot-1-wallet.jpg)
 
-| Transaction Success | Transaction Result |
-|---|---|
-| ![TX](public/screenshot-3-tx-success.png) | ![Result](public/screenshot-4-tx-result.png) |
+### 2. XLM Balance Displayed
+![XLM Balance](public/screenshot-2-balance.jpg)
+
+### 3. Transaction Successful
+![Transaction Success](public/screenshot-3-tx-success.jpg)
+
+### 4. Transaction Result on Stellar Expert Explorer
+![Transaction Result](public/screenshot-4-tx-result.jpg)
 
 ---
 
@@ -91,12 +95,6 @@ src/
     ├── SendPayment.tsx   # XLM transfer component
     └── TransactionHistory.tsx # TX history viewer
 ```
-
----
-
-## 🌐 Deployed App
-
-> Deploy via Vercel: `npx vercel --prod`
 
 ---
 
