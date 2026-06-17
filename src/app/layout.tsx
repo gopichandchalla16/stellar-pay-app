@@ -2,19 +2,19 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'StellarPay — Testnet Payment dApp',
-  description: 'Send XLM on Stellar Testnet with Freighter wallet. Level 1 White Belt — Rise In × Stellar Journey to Mastery.',
-  keywords: ['Stellar', 'XLM', 'Freighter', 'Testnet', 'dApp', 'Web3'],
+  title: 'StellarPay - Stellar Testnet dApp',
+  description: 'A Stellar dApp for sending XLM, checking balances, and viewing transactions on testnet. Built for the Rise In White Belt challenge.',
+  keywords: ['Stellar', 'XLM', 'dApp', 'blockchain', 'testnet', 'Freighter'],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body>{children}</body>
+      <body className="min-h-screen bg-stellar-dark antialiased">{children}</body>
     </html>
   );
 }

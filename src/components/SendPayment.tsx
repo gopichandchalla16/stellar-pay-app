@@ -1,159 +1,253 @@
 'use client';
+
 import { useState } from 'react';
-import { Send, CheckCircle, XCircle, Loader, ExternalLink, ArrowRight } from 'lucide-react';
-import { TxStatus, TxResult } from '@/lib/useWallet';
+import {
+  Horizon,
+  TransactionBuilder,
+  Networks,
+  BASE_FEE,
+  Operation,
+  Asset,
+} from '@stellar/stellar-sdk';
+import { signTransaction } from '@stellar/freighter-api';
+
+const HORIZON_URL = 'https://horizon-testnet.stellar.org';
+const server = new Horizon.Server(HORIZON_URL);
 
 interface Props {
-  onSend: (dest: string, amount: string, memo?: string) => void;
-  txStatus: TxStatus;
-  txResult: TxResult | null;
-  txError: string;
-  onReset: () => void;
-  senderBalance: string;
+  walletAddress: string;
+  onSuccess: () => void;
 }
 
-const STATUS_LABELS: Record<TxStatus, string> = {
-  idle: 'Send Payment',
-  building: 'Building transaction...',
-  signing: 'Sign in Freighter...',
-  submitting: 'Submitting to Stellar...',
-  success: 'Transaction Sent!',
-  error: 'Transaction Failed',
-};
+type TxStatus = 'idle' | 'building' | 'signing' | 'submitting' | 'success' | 'error';
 
-export default function SendPayment({ onSend, txStatus, txResult, txError, onReset, senderBalance }: Props) {
+export default function SendPayment({ walletAddress, onSuccess }: Props) {
   const [destination, setDestination] = useState('');
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
+  const [status, setStatus] = useState<TxStatus>('idle');
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const isLoading = ['building', 'signing', 'submitting'].includes(txStatus);
-  const maxAmount = Math.max(0, parseFloat(senderBalance || '0') - 0.5).toFixed(4);
+  const isValidAddress = (addr: string) => /^G[A-Z0-9]{55}$/.test(addr.trim());
+  const isValidAmount = (amt: string) => parseFloat(amt) > 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!destination.trim() || !amount.trim()) return;
-    onSend(destination.trim(), amount.trim(), memo.trim() || undefined);
+  const statusLabel: Record<TxStatus, string> = {
+    idle: '🚀 Send XLM',
+    building: '⚙️ Building Transaction...',
+    signing: '✍️ Waiting for Signature...',
+    submitting: '📡 Submitting to Network...',
+    success: '✅ Sent!',
+    error: '🔁 Try Again',
   };
 
-  if (txStatus === 'success' && txResult) {
-    return (
-      <div className="card-glow rounded-2xl bg-[#0d1a13] border border-[#0e9e6a]/20 p-6 animate-slide-in text-center">
-        <div className="flex justify-center mb-4">
-          <div className="w-14 h-14 rounded-full bg-[#0b4f37]/50 border border-[#14b87e]/30 flex items-center justify-center">
-            <CheckCircle size={28} className="text-[#2ec98a]" />
-          </div>
-        </div>
-        <h3 className="text-lg font-semibold text-[#2ec98a] mb-1">Payment Confirmed ✅</h3>
-        <p className="text-sm text-slate-400 mb-4">Your transaction was successfully submitted to Stellar Testnet.</p>
-        <div className="bg-[#0a1410] rounded-xl p-4 text-left mb-4 border border-white/5">
-          <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">Transaction Hash</p>
-          <p className="font-mono text-xs text-slate-300 break-all">{txResult.hash}</p>
-        </div>
-        <div className="flex gap-2">
-          <a
-            href={`https://stellar.expert/explorer/testnet/tx/${txResult.hash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#0e9e6a]/30 text-sm text-[#2ec98a] hover:text-[#14b87e] hover:bg-[#0b4f37]/20 transition-all"
-          >
-            <ExternalLink size={14} />View on Explorer
-          </a>
-          <button
-            onClick={onReset}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0e9e6a] hover:bg-[#14b87e] text-white text-sm font-medium transition-colors"
-          >
-            New Payment <ArrowRight size={14} />
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const reset = () => {
+    setStatus('idle');
+    setTxHash(null);
+    setErrorMsg(null);
+    setDestination('');
+    setAmount('');
+    setMemo('');
+  };
 
-  if (txStatus === 'error') {
-    return (
-      <div className="card-glow rounded-2xl bg-[#0d1a13] border border-red-900/30 p-6 animate-slide-in text-center">
-        <div className="flex justify-center mb-4">
-          <div className="w-14 h-14 rounded-full bg-red-950/50 border border-red-800/30 flex items-center justify-center">
-            <XCircle size={28} className="text-red-400" />
-          </div>
-        </div>
-        <h3 className="text-lg font-semibold text-red-300 mb-1">Transaction Failed ❌</h3>
-        <p className="text-sm text-slate-400 mb-4 break-words">{txError}</p>
-        <button
-          onClick={onReset}
-          className="w-full py-2.5 rounded-xl bg-[#1a1010] border border-red-900/30 hover:border-red-700/50 text-sm text-red-400 hover:text-red-300 transition-all"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
+  const sendPayment = async () => {
+    if (!isValidAddress(destination)) {
+      setErrorMsg('Invalid destination address. Must be a valid Stellar public key (starts with G).');
+      setStatus('error');
+      return;
+    }
+    if (!isValidAmount(amount)) {
+      setErrorMsg('Amount must be greater than 0.');
+      setStatus('error');
+      return;
+    }
+    if (destination.trim() === walletAddress) {
+      setErrorMsg('Cannot send XLM to your own address.');
+      setStatus('error');
+      return;
+    }
+
+    setErrorMsg(null);
+    setTxHash(null);
+    setStatus('building');
+
+    try {
+      // Load source account
+      const sourceAccount = await server.loadAccount(walletAddress);
+
+      // Build transaction
+      const txBuilder = new TransactionBuilder(sourceAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: Networks.TESTNET,
+      })
+        .addOperation(
+          Operation.payment({
+            destination: destination.trim(),
+            asset: Asset.native(),
+            amount: parseFloat(amount).toFixed(7),
+          })
+        )
+        .setTimeout(180);
+
+      if (memo.trim()) {
+        txBuilder.addMemo({ type: 'text', value: memo.trim().slice(0, 28) } as any);
+      }
+
+      const transaction = txBuilder.build();
+      const xdr = transaction.toXDR();
+
+      // Sign with Freighter
+      setStatus('signing');
+      const signResult = await signTransaction(xdr, {
+        networkPassphrase: Networks.TESTNET,
+      });
+
+      if (signResult.error) {
+        throw new Error(signResult.error);
+      }
+
+      // Submit
+      setStatus('submitting');
+      const { TransactionBuilder: TB } = await import('@stellar/stellar-sdk');
+      const signedTx = TB.fromXDR(signResult.signedTxXdr, Networks.TESTNET);
+      const result = await server.submitTransaction(signedTx);
+
+      setTxHash(result.hash);
+      setStatus('success');
+      onSuccess();
+    } catch (e: any) {
+      const msg =
+        e?.response?.data?.extras?.result_codes?.transaction ||
+        e?.response?.data?.extras?.result_codes?.operations?.[0] ||
+        e?.message ||
+        'Transaction failed. Please try again.';
+      setErrorMsg(msg);
+      setStatus('error');
+    }
+  };
+
+  const busy = ['building', 'signing', 'submitting'].includes(status);
 
   return (
-    <div className="card-glow rounded-2xl bg-[#0d1a13] border border-white/5 p-6 animate-slide-in">
-      <div className="flex items-center gap-2 mb-5">
-        <Send size={16} className="text-[#14b87e]" />
-        <h2 className="text-base font-semibold text-slate-200">Send XLM</h2>
-        <span className="ml-auto text-xs text-slate-600 font-mono">Testnet</span>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">Destination Address</label>
-          <input
-            type="text"
-            value={destination}
-            onChange={e => setDestination(e.target.value)}
-            placeholder="G... Stellar public key"
-            disabled={isLoading}
-            className="w-full bg-[#0a1410] border border-white/8 rounded-xl px-4 py-3 text-sm font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-[#0e9e6a]/50 transition-colors disabled:opacity-50"
-            required
-          />
-        </div>
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs text-slate-500 uppercase tracking-widest">Amount (XLM)</label>
-            {senderBalance && (
-              <button type="button" onClick={() => setAmount(maxAmount)} className="text-xs text-[#14b87e] hover:text-[#2ec98a] transition-colors">
-                Max: {parseFloat(maxAmount).toFixed(4)} XLM
-              </button>
-            )}
+    <div className="stellar-card rounded-2xl p-6 animate-slide-up">
+      <h2 className="text-lg font-semibold text-slate-200 mb-1">Send XLM</h2>
+      <p className="text-xs text-slate-400 mb-5">Transfer XLM on Stellar Testnet</p>
+
+      {status === 'success' && txHash ? (
+        <div className="tx-success rounded-xl p-5 animate-fade-in">
+          <div className="text-center mb-4">
+            <div className="text-4xl mb-2">🎉</div>
+            <h3 className="text-lg font-bold text-emerald-400">Transaction Successful!</h3>
+            <p className="text-xs text-slate-400 mt-1">Your XLM has been sent on the Stellar testnet</p>
           </div>
-          <input
-            type="number"
-            value={amount}
-            onChange={e => setAmount(e.target.value)}
-            placeholder="0.0000"
-            min="0.0000001"
-            step="0.0000001"
-            disabled={isLoading}
-            className="w-full bg-[#0a1410] border border-white/8 rounded-xl px-4 py-3 text-sm font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-[#0e9e6a]/50 transition-colors disabled:opacity-50"
-            required
-          />
+          <div className="bg-black/20 rounded-lg p-3 mb-4">
+            <p className="text-xs text-slate-400 mb-1">Transaction Hash</p>
+            <p className="font-mono text-xs text-emerald-300 break-all">{txHash}</p>
+          </div>
+          <div className="flex gap-3">
+            <a
+              href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-center py-2.5 text-sm font-medium rounded-xl bg-emerald-900/30 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50 transition-all"
+            >
+              🔍 View on Explorer
+            </a>
+            <button
+              onClick={reset}
+              className="flex-1 py-2.5 text-sm font-medium rounded-xl stellar-button text-white"
+            >
+              Send Another
+            </button>
+          </div>
         </div>
-        <div>
-          <label className="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">Memo <span className="text-slate-700">(optional, max 28 chars)</span></label>
-          <input
-            type="text"
-            value={memo}
-            onChange={e => setMemo(e.target.value.slice(0, 28))}
-            placeholder="Payment note..."
-            disabled={isLoading}
-            className="w-full bg-[#0a1410] border border-white/8 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-[#0e9e6a]/50 transition-colors disabled:opacity-50"
-          />
-          {memo && <p className="mt-1 text-xs text-slate-600">{memo.length}/28</p>}
-        </div>
-        <button
-          type="submit"
-          disabled={isLoading || !destination || !amount}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#0e9e6a] hover:bg-[#14b87e] disabled:bg-[#0b4f37] disabled:text-[#0d7d54] text-white font-medium text-sm transition-all"
-        >
-          {isLoading ? (
-            <><Loader size={16} className="animate-spin-slow" />{STATUS_LABELS[txStatus]}</>
-          ) : (
-            <><Send size={16} />{STATUS_LABELS[txStatus]}</>
+      ) : (
+        <>
+          {/* Destination */}
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              Destination Address <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder="G... (Stellar public key)"
+              disabled={busy}
+              className="input-field w-full px-4 py-3 rounded-xl text-sm font-mono"
+            />
+          </div>
+
+          {/* Amount */}
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              Amount (XLM) <span className="text-red-400">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.0"
+                min="0.0000001"
+                step="0.1"
+                disabled={busy}
+                className="input-field w-full px-4 py-3 rounded-xl text-sm pr-16"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[#00B4D8] font-semibold">XLM</span>
+            </div>
+          </div>
+
+          {/* Memo */}
+          <div className="mb-5">
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              Memo <span className="text-slate-500 font-normal">(optional, max 28 chars)</span>
+            </label>
+            <input
+              type="text"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value.slice(0, 28))}
+              placeholder="e.g. Payment for services"
+              disabled={busy}
+              className="input-field w-full px-4 py-3 rounded-xl text-sm"
+            />
+          </div>
+
+          {/* Status indicator */}
+          {busy && (
+            <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/20 rounded-xl">
+              <div className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4 text-[#00B4D8]" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                <span className="text-xs text-blue-300">
+                  {status === 'building' && 'Building transaction on testnet...'}
+                  {status === 'signing' && 'Please approve in Freighter wallet popup...'}
+                  {status === 'submitting' && 'Broadcasting to Stellar testnet...'}
+                </span>
+              </div>
+            </div>
           )}
-        </button>
-      </form>
+
+          {/* Error */}
+          {status === 'error' && errorMsg && (
+            <div className="mb-4 tx-error rounded-xl p-3">
+              <p className="text-xs text-red-400">
+                <strong>Error:</strong> {errorMsg}
+              </p>
+            </div>
+          )}
+
+          <button
+            onClick={status === 'error' ? reset : sendPayment}
+            disabled={busy}
+            className="stellar-button w-full py-3.5 rounded-xl text-white font-semibold text-sm"
+          >
+            {statusLabel[status]}
+          </button>
+        </>
+      )}
     </div>
   );
 }

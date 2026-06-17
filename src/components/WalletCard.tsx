@@ -1,105 +1,215 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { Copy, Check, ExternalLink, RefreshCw, Power, Droplets } from 'lucide-react';
-import { truncateAddress, formatXLM } from '@/lib/stellar';
+
+import { useState, useCallback, useEffect } from 'react';
+import {
+  isConnected,
+  getAddress,
+  requestAccess,
+} from '@stellar/freighter-api';
+import { Horizon } from '@stellar/stellar-sdk';
+
+const HORIZON_URL = 'https://horizon-testnet.stellar.org';
+const server = new Horizon.Server(HORIZON_URL);
 
 interface Props {
-  publicKey: string;
-  balance: string;
-  isRefreshing: boolean;
-  fundingLoading: boolean;
-  fundingMsg: string;
-  onDisconnect: () => void;
-  onRefresh: () => void;
-  onFund: () => void;
+  walletAddress: string | null;
+  setWalletAddress: (addr: string | null) => void;
+  balance: string | null;
+  setBalance: (bal: string | null) => void;
+  refreshTrigger: number;
 }
 
-export default function WalletCard({ publicKey, balance, isRefreshing, fundingLoading, fundingMsg, onDisconnect, onRefresh, onFund }: Props) {
-  const [copied, setCopied] = useState(false);
-  const [displayBalance, setDisplayBalance] = useState(balance);
+export default function WalletCard({
+  walletAddress,
+  setWalletAddress,
+  balance,
+  setBalance,
+  refreshTrigger,
+}: Props) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [funding, setFunding] = useState(false);
+  const [fundMsg, setFundMsg] = useState<string | null>(null);
+  const [freighterInstalled, setFreighterInstalled] = useState<boolean | null>(null);
 
-  useEffect(() => { setDisplayBalance(balance); }, [balance]);
+  useEffect(() => {
+    isConnected().then((res) => setFreighterInstalled(res.isConnected));
+  }, []);
 
-  const copyAddress = () => {
-    navigator.clipboard.writeText(publicKey).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+  const fetchBalance = useCallback(async (address: string) => {
+    try {
+      const account = await server.loadAccount(address);
+      const xlm = account.balances.find((b: any) => b.asset_type === 'native');
+      setBalance(xlm ? parseFloat(xlm.balance).toFixed(4) : '0.0000');
+    } catch {
+      setBalance('0.0000');
+    }
+  }, [setBalance]);
+
+  useEffect(() => {
+    if (walletAddress) fetchBalance(walletAddress);
+  }, [walletAddress, refreshTrigger, fetchBalance]);
+
+  const connectWallet = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const connRes = await isConnected();
+      if (!connRes.isConnected) {
+        setError('Freighter wallet extension not found. Please install it from freighter.app');
+        return;
+      }
+      const accessRes = await requestAccess();
+      if (accessRes.error) {
+        setError(accessRes.error);
+        return;
+      }
+      const addrRes = await getAddress();
+      if (addrRes.error) {
+        setError(addrRes.error);
+        return;
+      }
+      setWalletAddress(addrRes.address);
+      await fetchBalance(addrRes.address);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to connect wallet');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const disconnectWallet = () => {
+    setWalletAddress(null);
+    setBalance(null);
+    setFundMsg(null);
+    setError(null);
+  };
+
+  const fundWithFriendbot = async () => {
+    if (!walletAddress) return;
+    setFunding(true);
+    setFundMsg(null);
+    try {
+      const res = await fetch(
+        `https://friendbot.stellar.org?addr=${encodeURIComponent(walletAddress)}`
+      );
+      if (res.ok) {
+        setFundMsg('✅ Account funded with 10,000 XLM!');
+        await fetchBalance(walletAddress);
+      } else {
+        const body = await res.json();
+        const detail = body?.detail || '';
+        if (detail.includes('already exists') || detail.includes('createAccountAlreadyExist')) {
+          setFundMsg('ℹ️ Account already funded on testnet.');
+        } else {
+          setFundMsg('⚠️ Could not fund. Account may already exist.');
+        }
+      }
+    } catch {
+      setFundMsg('⚠️ Friendbot request failed. Try again.');
+    } finally {
+      setFunding(false);
+    }
+  };
+
+  const shortAddress = (addr: string) =>
+    `${addr.slice(0, 6)}...${addr.slice(-6)}`;
+
   return (
-    <div className="card-glow-active rounded-2xl bg-[#0d1a13] border border-[#0e9e6a]/20 p-6 animate-slide-in">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[#2ec98a] animate-pulse-slow" />
-          <span className="text-xs font-medium text-[#2ec98a] uppercase tracking-widest">Testnet Connected</span>
+    <div className="stellar-card rounded-2xl p-6 animate-slide-up">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-200">Wallet</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Freighter · Stellar Testnet</p>
         </div>
-        <button
-          onClick={onDisconnect}
-          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-red-400 transition-colors px-2 py-1 rounded-lg hover:bg-red-950/30"
-        >
-          <Power size={12} />Disconnect
-        </button>
+        {walletAddress && (
+          <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-900/30 px-2.5 py-1 rounded-full border border-emerald-500/20">
+            <span className="status-dot" style={{ width: 6, height: 6 }} />
+            Connected
+          </span>
+        )}
       </div>
 
-      <div className="mb-5">
-        <p className="text-xs text-slate-500 mb-1 font-medium uppercase tracking-widest">XLM Balance</p>
-        <div className="flex items-end gap-2">
-          {isRefreshing ? (
-            <div className="h-10 w-40 rounded-lg animate-shimmer" />
-          ) : (
-            <span className="text-4xl font-bold font-mono gradient-text animate-count-up" key={displayBalance}>
-              {formatXLM(displayBalance)}
-            </span>
+      {!walletAddress ? (
+        <>
+          {freighterInstalled === false && (
+            <div className="mb-4 p-3 rounded-lg bg-yellow-900/20 border border-yellow-500/30">
+              <p className="text-xs text-yellow-400">
+                ⚠️ Freighter not detected.{' '}
+                <a
+                  href="https://freighter.app"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  Install it here
+                </a>{' '}
+                then refresh.
+              </p>
+            </div>
           )}
-          <span className="text-slate-400 font-medium mb-1">XLM</span>
-        </div>
-        <p className="text-xs text-slate-600 mt-1 font-mono">{parseFloat(displayBalance || '0').toFixed(7)} XLM</p>
-      </div>
-
-      <div className="bg-[#0a1410] rounded-xl p-3.5 mb-4 border border-white/5">
-        <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-widest">Public Key</p>
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-sm text-slate-300 truncate">{truncateAddress(publicKey, 8)}</span>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={copyAddress} className="p-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-[#14b87e] transition-colors">
-              {copied ? <Check size={14} className="text-[#14b87e]" /> : <Copy size={14} />}
-            </button>
-            <a
-              href={`https://stellar.expert/explorer/testnet/account/${publicKey}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-[#14b87e] transition-colors"
-            >
-              <ExternalLink size={14} />
-            </a>
+          <button
+            onClick={connectWallet}
+            disabled={loading}
+            className="stellar-button w-full py-3 px-6 rounded-xl text-white font-semibold text-sm"
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Connecting...
+              </span>
+            ) : (
+              '🔗 Connect Freighter Wallet'
+            )}
+          </button>
+          {error && (
+            <p className="mt-3 text-xs text-red-400 bg-red-900/20 border border-red-500/20 rounded-lg p-3">{error}</p>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Address */}
+          <div className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10">
+            <p className="text-xs text-slate-400 mb-1">Address</p>
+            <p className="font-mono text-sm text-slate-200 break-all">{walletAddress}</p>
           </div>
-        </div>
-      </div>
 
-      <div className="flex gap-2">
-        <button
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/8 text-sm text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={isRefreshing ? 'animate-spin-slow' : ''} />
-          {isRefreshing ? 'Refreshing...' : 'Refresh'}
-        </button>
-        <button
-          onClick={onFund}
-          disabled={fundingLoading}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#0e9e6a]/30 text-sm text-[#2ec98a] hover:text-[#14b87e] hover:bg-[#0b4f37]/20 transition-all disabled:opacity-50"
-        >
-          <Droplets size={14} className={fundingLoading ? 'animate-spin-slow' : ''} />
-          {fundingLoading ? 'Funding...' : 'Friendbot'}
-        </button>
-      </div>
+          {/* Balance */}
+          <div className="mb-5 p-4 bg-gradient-to-br from-[#00B4D8]/10 to-[#7B2FBE]/10 rounded-xl border border-[#00B4D8]/20">
+            <p className="text-xs text-slate-400 mb-1">XLM Balance</p>
+            {balance !== null ? (
+              <p className="text-3xl font-bold text-white">
+                {balance} <span className="text-sm font-normal text-[#00B4D8]">XLM</span>
+              </p>
+            ) : (
+              <div className="shimmer h-9 w-36 rounded-lg" />
+            )}
+          </div>
 
-      {fundingMsg && (
-        <p className={`mt-3 text-xs text-center animate-fade-in ${fundingMsg.startsWith('Funded') ? 'text-[#2ec98a]' : 'text-red-400'}`}>
-          {fundingMsg}
-        </p>
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button
+              onClick={fundWithFriendbot}
+              disabled={funding}
+              className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-violet-900/30 border border-violet-500/30 text-violet-300 hover:bg-violet-900/50 transition-all"
+            >
+              {funding ? '⏳ Funding...' : '🪙 Fund via Friendbot'}
+            </button>
+            <button
+              onClick={disconnectWallet}
+              className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-red-900/20 border border-red-500/20 text-red-400 hover:bg-red-900/30 transition-all"
+            >
+              🔌 Disconnect
+            </button>
+          </div>
+
+          {fundMsg && (
+            <p className="mt-3 text-xs text-center text-slate-300 bg-white/5 rounded-lg p-2.5">{fundMsg}</p>
+          )}
+        </>
       )}
     </div>
   );
