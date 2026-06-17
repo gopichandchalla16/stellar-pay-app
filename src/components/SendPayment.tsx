@@ -9,7 +9,6 @@ import {
   Operation,
   Asset,
 } from '@stellar/stellar-sdk';
-import { signTransaction } from '@stellar/freighter-api';
 
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
 const server = new Horizon.Server(HORIZON_URL);
@@ -28,18 +27,10 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
   const [status, setStatus] = useState<TxStatus>('idle');
   const [txHash, setTxHash] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [freighterMode, setFreighterMode] = useState(true);
 
   const isValidAddress = (addr: string) => /^G[A-Z0-9]{55}$/.test(addr.trim());
   const isValidAmount = (amt: string) => parseFloat(amt) > 0;
-
-  const statusLabel: Record<TxStatus, string> = {
-    idle: '🚀 Send XLM',
-    building: '⚙️ Building Transaction...',
-    signing: '✍️ Waiting for Signature...',
-    submitting: '📡 Submitting to Network...',
-    success: '✅ Sent!',
-    error: '🔁 Try Again',
-  };
 
   const reset = () => {
     setStatus('idle');
@@ -52,7 +43,7 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
 
   const sendPayment = async () => {
     if (!isValidAddress(destination)) {
-      setErrorMsg('Invalid destination address. Must be a valid Stellar public key (starts with G).');
+      setErrorMsg('Invalid destination address. Must be a valid Stellar public key starting with G.');
       setStatus('error');
       return;
     }
@@ -72,22 +63,17 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
     setStatus('building');
 
     try {
-      // Load source account
       const sourceAccount = await server.loadAccount(walletAddress);
-
-      // Build transaction
       const txBuilder = new TransactionBuilder(sourceAccount, {
         fee: BASE_FEE,
         networkPassphrase: Networks.TESTNET,
-      })
-        .addOperation(
-          Operation.payment({
-            destination: destination.trim(),
-            asset: Asset.native(),
-            amount: parseFloat(amount).toFixed(7),
-          })
-        )
-        .setTimeout(180);
+      }).addOperation(
+        Operation.payment({
+          destination: destination.trim(),
+          asset: Asset.native(),
+          amount: parseFloat(amount).toFixed(7),
+        })
+      ).setTimeout(180);
 
       if (memo.trim()) {
         txBuilder.addMemo({ type: 'text', value: memo.trim().slice(0, 28) } as any);
@@ -96,17 +82,14 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
       const transaction = txBuilder.build();
       const xdr = transaction.toXDR();
 
-      // Sign with Freighter
       setStatus('signing');
-      const signResult = await signTransaction(xdr, {
-        networkPassphrase: Networks.TESTNET,
-      });
 
-      if (signResult.error) {
-        throw new Error(signResult.error);
-      }
+      // Try Freighter signing
+      const { signTransaction } = await import('@stellar/freighter-api');
+      const signResult = await signTransaction(xdr, { networkPassphrase: Networks.TESTNET });
 
-      // Submit
+      if (signResult.error) throw new Error(signResult.error);
+
       setStatus('submitting');
       const { TransactionBuilder: TB } = await import('@stellar/stellar-sdk');
       const signedTx = TB.fromXDR(signResult.signedTxXdr, Networks.TESTNET);
@@ -121,17 +104,32 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
         e?.response?.data?.extras?.result_codes?.operations?.[0] ||
         e?.message ||
         'Transaction failed. Please try again.';
-      setErrorMsg(msg);
+
+      // If Freighter not available, show helpful message
+      if (msg.toLowerCase().includes('freighter') || msg.toLowerCase().includes('extension') || msg.toLowerCase().includes('not found')) {
+        setErrorMsg('Freighter extension is required to sign and send transactions. Please open this app at localhost:3000 or on a deployed URL with Freighter installed.');
+      } else {
+        setErrorMsg(msg);
+      }
       setStatus('error');
     }
   };
 
   const busy = ['building', 'signing', 'submitting'].includes(status);
 
+  const statusLabel: Record<TxStatus, string> = {
+    idle: '🚀 Send XLM',
+    building: '⚙️ Building Transaction...',
+    signing: '✍️ Waiting for Signature...',
+    submitting: '📡 Submitting to Network...',
+    success: '✅ Sent!',
+    error: '🔁 Try Again',
+  };
+
   return (
     <div className="stellar-card rounded-2xl p-6 animate-slide-up">
       <h2 className="text-lg font-semibold text-slate-200 mb-1">Send XLM</h2>
-      <p className="text-xs text-slate-400 mb-5">Transfer XLM on Stellar Testnet</p>
+      <p className="text-xs text-slate-400 mb-5">Transfer XLM on Stellar Testnet · Requires Freighter to sign</p>
 
       {status === 'success' && txHash ? (
         <div className="tx-success rounded-xl p-5 animate-fade-in">
@@ -153,17 +151,13 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
             >
               🔍 View on Explorer
             </a>
-            <button
-              onClick={reset}
-              className="flex-1 py-2.5 text-sm font-medium rounded-xl stellar-button text-white"
-            >
+            <button onClick={reset} className="flex-1 py-2.5 text-sm font-medium rounded-xl stellar-button text-white">
               Send Another
             </button>
           </div>
         </div>
       ) : (
         <>
-          {/* Destination */}
           <div className="mb-4">
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
               Destination Address <span className="text-red-400">*</span>
@@ -178,7 +172,6 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
             />
           </div>
 
-          {/* Amount */}
           <div className="mb-4">
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
               Amount (XLM) <span className="text-red-400">*</span>
@@ -198,7 +191,6 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
             </div>
           </div>
 
-          {/* Memo */}
           <div className="mb-5">
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
               Memo <span className="text-slate-500 font-normal">(optional, max 28 chars)</span>
@@ -213,7 +205,6 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
             />
           </div>
 
-          {/* Status indicator */}
           {busy && (
             <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/20 rounded-xl">
               <div className="flex items-center gap-2">
@@ -230,12 +221,9 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
             </div>
           )}
 
-          {/* Error */}
           {status === 'error' && errorMsg && (
             <div className="mb-4 tx-error rounded-xl p-3">
-              <p className="text-xs text-red-400">
-                <strong>Error:</strong> {errorMsg}
-              </p>
+              <p className="text-xs text-red-400"><strong>Error:</strong> {errorMsg}</p>
             </div>
           )}
 
@@ -246,6 +234,10 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
           >
             {statusLabel[status]}
           </button>
+
+          <p className="text-xs text-center text-slate-500 mt-3">
+            ⚠️ Freighter extension required to sign transactions
+          </p>
         </>
       )}
     </div>

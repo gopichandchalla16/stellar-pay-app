@@ -1,11 +1,6 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import {
-  isConnected,
-  getAddress,
-  requestAccess,
-} from '@stellar/freighter-api';
 import { Horizon } from '@stellar/stellar-sdk';
 
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
@@ -19,6 +14,11 @@ interface Props {
   refreshTrigger: number;
 }
 
+function detectFreighter(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(window as any).freighter || !!(window as any).freighterApi;
+}
+
 export default function WalletCard({
   walletAddress,
   setWalletAddress,
@@ -30,19 +30,33 @@ export default function WalletCard({
   const [error, setError] = useState<string | null>(null);
   const [funding, setFunding] = useState(false);
   const [fundMsg, setFundMsg] = useState<string | null>(null);
-  const [freighterInstalled, setFreighterInstalled] = useState<boolean | null>(null);
+  const [freighterAvailable, setFreighterAvailable] = useState<boolean>(false);
+  const [showManual, setShowManual] = useState(false);
+  const [manualInput, setManualInput] = useState('');
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
 
+  // Detect Freighter after mount (not available in SSR or iframes)
   useEffect(() => {
-    isConnected().then((res) => setFreighterInstalled(res.isConnected));
+    const check = () => {
+      const found = detectFreighter();
+      setFreighterAvailable(found);
+    };
+    // Give the extension 800ms to inject itself
+    const t = setTimeout(check, 800);
+    return () => clearTimeout(t);
   }, []);
 
   const fetchBalance = useCallback(async (address: string) => {
+    setBalanceLoading(true);
     try {
       const account = await server.loadAccount(address);
       const xlm = account.balances.find((b: any) => b.asset_type === 'native');
       setBalance(xlm ? parseFloat(xlm.balance).toFixed(4) : '0.0000');
     } catch {
       setBalance('0.0000');
+    } finally {
+      setBalanceLoading(false);
     }
   }, [setBalance]);
 
@@ -50,29 +64,47 @@ export default function WalletCard({
     if (walletAddress) fetchBalance(walletAddress);
   }, [walletAddress, refreshTrigger, fetchBalance]);
 
-  const connectWallet = async () => {
+  // --- Freighter connect ---
+  const connectFreighter = async () => {
     setLoading(true);
     setError(null);
     try {
+      const { isConnected, requestAccess, getAddress } = await import('@stellar/freighter-api');
       const connRes = await isConnected();
       if (!connRes.isConnected) {
-        setError('Freighter wallet extension not found. Please install it from freighter.app');
+        setError('Freighter not detected. Use "Enter Address Manually" below.');
+        setLoading(false);
         return;
       }
       const accessRes = await requestAccess();
-      if (accessRes.error) {
-        setError(accessRes.error);
-        return;
-      }
+      if (accessRes.error) { setError(accessRes.error); setLoading(false); return; }
       const addrRes = await getAddress();
-      if (addrRes.error) {
-        setError(addrRes.error);
-        return;
-      }
+      if (addrRes.error) { setError(addrRes.error); setLoading(false); return; }
       setWalletAddress(addrRes.address);
       await fetchBalance(addrRes.address);
     } catch (e: any) {
-      setError(e?.message || 'Failed to connect wallet');
+      setError(e?.message || 'Connection failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Manual address connect ---
+  const connectManual = async () => {
+    const addr = manualInput.trim();
+    setManualError(null);
+    if (!/^G[A-Z0-9]{55}$/.test(addr)) {
+      setManualError('Invalid Stellar address. Must start with G and be 56 characters.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await fetchBalance(addr);
+      setWalletAddress(addr);
+      setShowManual(false);
+      setManualInput('');
+    } catch {
+      setManualError('Could not fetch balance. Check the address and try again.');
     } finally {
       setLoading(false);
     }
@@ -83,6 +115,7 @@ export default function WalletCard({
     setBalance(null);
     setFundMsg(null);
     setError(null);
+    setManualError(null);
   };
 
   const fundWithFriendbot = async () => {
@@ -90,30 +123,26 @@ export default function WalletCard({
     setFunding(true);
     setFundMsg(null);
     try {
-      const res = await fetch(
-        `https://friendbot.stellar.org?addr=${encodeURIComponent(walletAddress)}`
-      );
+      const res = await fetch(`https://friendbot.stellar.org?addr=${encodeURIComponent(walletAddress)}`);
       if (res.ok) {
         setFundMsg('✅ Account funded with 10,000 XLM!');
         await fetchBalance(walletAddress);
       } else {
-        const body = await res.json();
+        const body = await res.json().catch(() => ({}));
         const detail = body?.detail || '';
         if (detail.includes('already exists') || detail.includes('createAccountAlreadyExist')) {
           setFundMsg('ℹ️ Account already funded on testnet.');
+          await fetchBalance(walletAddress);
         } else {
-          setFundMsg('⚠️ Could not fund. Account may already exist.');
+          setFundMsg('⚠️ Friendbot failed. Try again in a moment.');
         }
       }
     } catch {
-      setFundMsg('⚠️ Friendbot request failed. Try again.');
+      setFundMsg('⚠️ Network error. Try again.');
     } finally {
       setFunding(false);
     }
   };
-
-  const shortAddress = (addr: string) =>
-    `${addr.slice(0, 6)}...${addr.slice(-6)}`;
 
   return (
     <div className="stellar-card rounded-2xl p-6 animate-slide-up">
@@ -132,28 +161,13 @@ export default function WalletCard({
 
       {!walletAddress ? (
         <>
-          {freighterInstalled === false && (
-            <div className="mb-4 p-3 rounded-lg bg-yellow-900/20 border border-yellow-500/30">
-              <p className="text-xs text-yellow-400">
-                ⚠️ Freighter not detected.{' '}
-                <a
-                  href="https://freighter.app"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                >
-                  Install it here
-                </a>{' '}
-                then refresh.
-              </p>
-            </div>
-          )}
+          {/* Primary: Freighter connect */}
           <button
-            onClick={connectWallet}
+            onClick={connectFreighter}
             disabled={loading}
-            className="stellar-button w-full py-3 px-6 rounded-xl text-white font-semibold text-sm"
+            className="stellar-button w-full py-3 px-6 rounded-xl text-white font-semibold text-sm mb-3"
           >
-            {loading ? (
+            {loading && !showManual ? (
               <span className="flex items-center justify-center gap-2">
                 <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -161,12 +175,74 @@ export default function WalletCard({
                 </svg>
                 Connecting...
               </span>
-            ) : (
-              '🔗 Connect Freighter Wallet'
-            )}
+            ) : '🔗 Connect Freighter Wallet'}
           </button>
+
+          {/* Error from Freighter attempt */}
           {error && (
-            <p className="mt-3 text-xs text-red-400 bg-red-900/20 border border-red-500/20 rounded-lg p-3">{error}</p>
+            <p className="mb-3 text-xs text-red-400 bg-red-900/20 border border-red-500/20 rounded-lg p-3">{error}</p>
+          )}
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-3">
+            <div className="flex-1 h-px bg-white/10" />
+            <span className="text-xs text-slate-500">or</span>
+            <div className="flex-1 h-px bg-white/10" />
+          </div>
+
+          {/* Manual address input */}
+          {!showManual ? (
+            <button
+              onClick={() => { setShowManual(true); setError(null); }}
+              className="w-full py-2.5 text-sm font-medium rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-all"
+            >
+              📋 Enter Wallet Address Manually
+            </button>
+          ) : (
+            <div className="animate-fade-in">
+              <p className="text-xs text-slate-400 mb-2">
+                Paste your Stellar testnet address (starts with G...)
+              </p>
+              <input
+                type="text"
+                value={manualInput}
+                onChange={(e) => setManualInput(e.target.value)}
+                placeholder="GB3ZTOE64ESLST264FNHWWGFYA5QN6LPET3OQ4..."
+                className="input-field w-full px-4 py-3 rounded-xl text-xs font-mono mb-2"
+                autoFocus
+              />
+              {manualError && (
+                <p className="text-xs text-red-400 mb-2">{manualError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={connectManual}
+                  disabled={loading || !manualInput.trim()}
+                  className="flex-1 stellar-button py-2.5 rounded-xl text-white text-sm font-semibold"
+                >
+                  {loading ? '⏳ Loading...' : '✅ Connect'}
+                </button>
+                <button
+                  onClick={() => { setShowManual(false); setManualInput(''); setManualError(null); }}
+                  className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-400 text-sm hover:bg-white/10 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                💡 Find your address in the Freighter extension (top of the popup)
+              </p>
+            </div>
+          )}
+
+          {/* Install hint */}
+          {!freighterAvailable && !showManual && (
+            <p className="mt-3 text-center text-xs text-slate-500">
+              Don't have Freighter?{' '}
+              <a href="https://freighter.app" target="_blank" rel="noopener noreferrer" className="text-[#00B4D8] hover:underline">
+                Install here
+              </a>
+            </p>
           )}
         </>
       ) : (
@@ -174,18 +250,19 @@ export default function WalletCard({
           {/* Address */}
           <div className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10">
             <p className="text-xs text-slate-400 mb-1">Address</p>
-            <p className="font-mono text-sm text-slate-200 break-all">{walletAddress}</p>
+            <p className="font-mono text-xs text-slate-200 break-all">{walletAddress}</p>
           </div>
 
           {/* Balance */}
           <div className="mb-5 p-4 bg-gradient-to-br from-[#00B4D8]/10 to-[#7B2FBE]/10 rounded-xl border border-[#00B4D8]/20">
             <p className="text-xs text-slate-400 mb-1">XLM Balance</p>
-            {balance !== null ? (
-              <p className="text-3xl font-bold text-white">
-                {balance} <span className="text-sm font-normal text-[#00B4D8]">XLM</span>
-              </p>
-            ) : (
+            {balanceLoading ? (
               <div className="shimmer h-9 w-36 rounded-lg" />
+            ) : (
+              <p className="text-3xl font-bold text-white">
+                {balance ?? '—'}{' '}
+                <span className="text-sm font-normal text-[#00B4D8]">XLM</span>
+              </p>
             )}
           </div>
 
