@@ -8,6 +8,7 @@ import {
   BASE_FEE,
   Operation,
   Asset,
+  StrKey,
 } from '@stellar/stellar-sdk';
 
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
@@ -20,10 +21,13 @@ interface Props {
 
 type TxStatus = 'idle' | 'building' | 'signing' | 'submitting' | 'success' | 'error';
 
-// Relaxed validator: trim, uppercase, check G + 55 alphanumeric
 function isValidStellarAddress(raw: string): boolean {
-  const addr = raw.trim().toUpperCase();
-  return /^G[A-Z2-7]{55}$/.test(addr);
+  try {
+    const addr = raw.trim();
+    return StrKey.isValidEd25519PublicKey(addr);
+  } catch {
+    return false;
+  }
 }
 
 function isFreighterAvailable(): boolean {
@@ -49,19 +53,16 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
   };
 
   const sendPayment = async () => {
-    const cleanDest = destination.trim().toUpperCase();
+    const cleanDest = destination.trim();
     const cleanAmount = amount.trim();
 
-    // Validate
     if (!cleanDest) {
       setErrorMsg('Please enter a destination address.');
       setStatus('error');
       return;
     }
     if (!isValidStellarAddress(cleanDest)) {
-      setErrorMsg(
-        `Invalid Stellar address. Address must start with "G" and be 56 characters long. You entered ${cleanDest.length} characters.`
-      );
+      setErrorMsg('Invalid Stellar address. Please enter a valid Stellar public key starting with G.');
       setStatus('error');
       return;
     }
@@ -70,7 +71,7 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
       setStatus('error');
       return;
     }
-    if (cleanDest === walletAddress.trim().toUpperCase()) {
+    if (cleanDest === walletAddress.trim()) {
       setErrorMsg('Cannot send XLM to your own address.');
       setStatus('error');
       return;
@@ -81,7 +82,6 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
     setStatus('building');
 
     try {
-      // Build transaction
       const sourceAccount = await server.loadAccount(walletAddress);
       const txBuilder = new TransactionBuilder(sourceAccount, {
         fee: BASE_FEE,
@@ -103,23 +103,20 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
 
       setStatus('signing');
 
-      // Try Freighter
       if (isFreighterAvailable()) {
         const { signTransaction } = await import('@stellar/freighter-api');
         const signResult = await signTransaction(xdr, { networkPassphrase: Networks.TESTNET });
         if (signResult.error) throw new Error(signResult.error);
-
         setStatus('submitting');
         const { TransactionBuilder: TB } = await import('@stellar/stellar-sdk');
         const signedTx = TB.fromXDR(signResult.signedTxXdr, Networks.TESTNET);
         const result = await server.submitTransaction(signedTx);
         setTxHash(result.hash);
       } else {
-        // Demo mode: simulate signing delay and generate a realistic-looking tx hash
+        // Demo mode — simulate for screenshot purposes
         await new Promise((r) => setTimeout(r, 1200));
         setStatus('submitting');
         await new Promise((r) => setTimeout(r, 900));
-        // Generate a deterministic fake hash for demo purposes
         const demoHash = Array.from(
           { length: 64 },
           () => '0123456789abcdef'[Math.floor(Math.random() * 16)]
@@ -167,9 +164,9 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
             <p className="text-xs text-slate-400 mb-1">Transaction Hash</p>
             <p className="font-mono text-xs text-emerald-300 break-all">{txHash}</p>
           </div>
-          <div className="bg-black/20 rounded-lg p-3 mb-4">
+          <div className="bg-black/20 rounded-lg p-3 mb-2">
             <p className="text-xs text-slate-400 mb-1">Sent To</p>
-            <p className="font-mono text-xs text-slate-300 break-all">{destination.trim().toUpperCase()}</p>
+            <p className="font-mono text-xs text-slate-300 break-all">{destination.trim()}</p>
           </div>
           <div className="bg-black/20 rounded-lg p-3 mb-4">
             <p className="text-xs text-slate-400 mb-1">Amount</p>
@@ -200,11 +197,11 @@ export default function SendPayment({ walletAddress, onSuccess }: Props) {
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
               onBlur={(e) => setDestination(e.target.value.trim())}
-              placeholder="GAIH3ULLFQ4DGSECF2AR555KZ4KNDGEKN4AFI4SU2M96FXBDPD2TMLS"
+              placeholder="GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
               disabled={busy}
               className="input-field w-full px-4 py-3 rounded-xl text-xs font-mono"
             />
-            <p className="text-xs text-slate-500 mt-1">56-character Stellar public key starting with G</p>
+            <p className="text-xs text-slate-500 mt-1">Valid Stellar public key starting with G</p>
           </div>
 
           <div className="mb-4">
